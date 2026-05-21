@@ -22,7 +22,7 @@
 - 50GM
 - 85GM
 - 16-35GMII
--leica D-LUX8
+- leica D-LUX8
 
 ## 記事ルール
 - WordPressに貼れる形式
