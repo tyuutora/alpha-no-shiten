@@ -34,6 +34,7 @@
 
 - `main` へ `articles/*.md` または `articles/images/` の変更を保存すると、GitHub ActionsがHTMLを生成します。
 - 例: `articles/fe85gm2-review.md` から `dist/fe85gm2-review.html` を生成します。
+- 記事Markdownを削除した場合は、対応する `dist/` のHTMLも自動的に削除します。
 - HTMLはWordPressへ貼り付けやすい本文断片として生成し、タイトル見出し、表、リスト、リンク、画像参照を保持します。
 - 画像参照は `dist/` から元画像へ辿れるよう `../articles/images/...` に変換します。将来のWordPress取込側でメディア登録またはURL置換を扱います。
 
