@@ -321,6 +321,24 @@ async function resolveTagId(name) {
   return created.id;
 }
 
+function verifyRankMathMeta(post, expected, slug) {
+  if (Object.keys(expected).length === 0) {
+    return;
+  }
+  if (!post?.meta) {
+    console.error(`item: Rank Math meta verification for post "${slug}"`);
+    throw new Error(
+      "WordPress response does not expose post meta. Install and activate the REST meta registration plugin.",
+    );
+  }
+  for (const [key, value] of Object.entries(expected)) {
+    if (post.meta[key] !== value) {
+      console.error(`item: Rank Math meta "${key}" verification for post "${slug}"`);
+      throw new Error(`WordPress did not store expected Rank Math meta: ${key}`);
+    }
+  }
+}
+
 async function publishDraft(filePath) {
   if (!filePath.startsWith("articles/") || !filePath.endsWith(".md")) {
     throw new Error(`Only articles/**/*.md is supported: ${filePath}`);
@@ -381,18 +399,20 @@ async function publishDraft(filePath) {
   const payload = JSON.stringify(post);
 
   if (Array.isArray(existing) && existing.length > 0) {
-    await wordpressRequest(`/wp-json/wp/v2/posts/${existing[0].id}`, {
+    const result = await wordpressRequest(`/wp-json/wp/v2/posts/${existing[0].id}`, {
       method: "POST",
       body: payload,
     }, `post "${slug}" update`);
+    verifyRankMathMeta(result, meta, slug);
     console.log(`Updated WordPress draft: ${slug}`);
     return;
   }
 
-  await wordpressRequest("/wp-json/wp/v2/posts", {
+  const result = await wordpressRequest("/wp-json/wp/v2/posts", {
     method: "POST",
     body: payload,
   }, `post "${slug}" creation`);
+  verifyRankMathMeta(result, meta, slug);
   console.log(`Created WordPress draft: ${slug}`);
 }
 
