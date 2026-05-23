@@ -24,15 +24,80 @@ function escapeHtml(text) {
     .replaceAll('"', "&quot;");
 }
 
-function stripFrontMatter(markdown) {
-  if (!markdown.startsWith("---\n")) {
-    return markdown;
+function cleanFrontMatterValue(value) {
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
   }
-  const closing = markdown.indexOf("\n---\n", 4);
+  return trimmed;
+}
+
+function parseFrontMatter(markdown) {
+  const normalized = markdown.replace(/\r\n/g, "\n");
+  if (!normalized.startsWith("---\n")) {
+    return { data: {}, body: normalized };
+  }
+  const closing = normalized.indexOf("\n---\n", 4);
   if (closing === -1) {
-    throw new Error("Front matter starts with --- but has no closing ---.");
+    throw new Error("frontmatter: starts with --- but has no closing ---.");
   }
-  return markdown.slice(closing + 5);
+
+  const data = {};
+  let arrayKey = null;
+  for (const line of normalized.slice(4, closing).split("\n")) {
+    if (!line.trim() || line.trim().startsWith("#")) {
+      continue;
+    }
+    const item = line.match(/^\s*-\s+(.+)\s*$/);
+    if (item && arrayKey) {
+      data[arrayKey].push(cleanFrontMatterValue(item[1]));
+      continue;
+    }
+    const field = line.match(/^([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)$/);
+    if (!field) {
+      throw new Error(`frontmatter: unsupported line "${line}"`);
+    }
+    const [, key, rawValue] = field;
+    const value = rawValue.trim();
+    if (!value) {
+      data[key] = [];
+      arrayKey = key;
+    } else if (value.startsWith("[") && value.endsWith("]")) {
+      data[key] = value
+        .slice(1, -1)
+        .split(",")
+        .map(cleanFrontMatterValue)
+        .filter(Boolean);
+      arrayKey = null;
+    } else {
+      data[key] = cleanFrontMatterValue(value);
+      arrayKey = null;
+    }
+  }
+  return { data, body: normalized.slice(closing + 5) };
+}
+
+function frontMatterString(data, ...names) {
+  for (const name of names) {
+    if (typeof data[name] === "string" && data[name].trim()) {
+      return data[name].trim();
+    }
+  }
+  return undefined;
+}
+
+function frontMatterList(data, name) {
+  const value = data[name];
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value.split(",").map((item) => item.trim()).filter(Boolean);
+  }
+  return [];
 }
 
 function inlineMarkdown(text) {
@@ -180,7 +245,7 @@ function slugFromPath(filePath) {
   return basename(filePath, extname(filePath));
 }
 
-async function wordpressRequest(endpoint, options = {}) {
+async function wordpressRequest(endpoint, options = {}, item = "WordPress request") {
   let response;
   try {
     response = await fetch(`${baseUrl}${endpoint}`, {
@@ -193,6 +258,7 @@ async function wordpressRequest(endpoint, options = {}) {
       },
     });
   } catch (error) {
+    console.error(`item: ${item}`);
     console.error("HTTP status: NETWORK_ERROR");
     console.error(`endpoint: ${endpoint}`);
     console.error(`response body: ${error.message}`);
@@ -200,6 +266,7 @@ async function wordpressRequest(endpoint, options = {}) {
   }
   const body = await response.text();
   if (!response.ok) {
+    console.error(`item: ${item}`);
     console.error(`HTTP status: ${response.status}`);
     console.error(`endpoint: ${endpoint}`);
     console.error(`response body: ${body}`);
@@ -208,7 +275,50 @@ async function wordpressRequest(endpoint, options = {}) {
   if (!body) {
     return null;
   }
-  return JSON.parse(body);
+  try {
+    return JSON.parse(body);
+  } catch (error) {
+    console.error(`item: ${item}`);
+    console.error(`HTTP status: ${response.status}`);
+    console.error(`endpoint: ${endpoint}`);
+    console.error(`response body: ${body}`);
+    throw new Error(`WordPress returned invalid JSON for ${item}: ${error.message}`);
+  }
+}
+
+function exactTermMatch(terms, name) {
+  const normalized = name.trim().toLocaleLowerCase();
+  return terms.find((term) => term.name?.trim().toLocaleLowerCase() === normalized);
+}
+
+async function resolveCategoryId(name) {
+  const endpoint = `/wp-json/wp/v2/categories?search=${encodeURIComponent(name)}&per_page=100&_fields=id,name`;
+  const categories = await wordpressRequest(endpoint, {}, `category "${name}" search`);
+  const category = exactTermMatch(Array.isArray(categories) ? categories : [], name);
+  if (!category) {
+    console.error(`item: category "${name}" resolution`);
+    throw new Error(`WordPress category does not exist: ${name}`);
+  }
+  return category.id;
+}
+
+async function resolveTagId(name) {
+  const searchEndpoint = `/wp-json/wp/v2/tags?search=${encodeURIComponent(name)}&per_page=100&_fields=id,name`;
+  const tags = await wordpressRequest(searchEndpoint, {}, `tag "${name}" search`);
+  const existing = exactTermMatch(Array.isArray(tags) ? tags : [], name);
+  if (existing) {
+    return existing.id;
+  }
+  const created = await wordpressRequest(
+    "/wp-json/wp/v2/tags",
+    { method: "POST", body: JSON.stringify({ name }) },
+    `tag "${name}" creation`,
+  );
+  if (!created?.id) {
+    console.error(`item: tag "${name}" creation`);
+    throw new Error(`WordPress did not return an ID for created tag: ${name}`);
+  }
+  return created.id;
 }
 
 async function publishDraft(filePath) {
@@ -216,26 +326,65 @@ async function publishDraft(filePath) {
     throw new Error(`Only articles/**/*.md is supported: ${filePath}`);
   }
 
-  const markdown = stripFrontMatter(await readFile(resolve(repoRoot, filePath), "utf8"));
-  const title = markdownTitle(markdown, filePath);
-  const slug = slugFromPath(filePath);
+  let parsed;
+  try {
+    parsed = parseFrontMatter(await readFile(resolve(repoRoot, filePath), "utf8"));
+  } catch (error) {
+    console.error(`item: frontmatter in ${filePath}`);
+    throw error;
+  }
+  const { data, body: markdown } = parsed;
+  const title = frontMatterString(data, "title") || markdownTitle(markdown, filePath);
+  const slug = frontMatterString(data, "slug") || slugFromPath(filePath);
+  const seoTitle = frontMatterString(data, "seo_title");
+  const focusKeyword = frontMatterString(data, "focus_keyword", "focus_keyphrase");
+  const metaDescription = frontMatterString(data, "meta_description", "description");
+  const categoryName = frontMatterString(data, "category");
+  const tagNames = frontMatterList(data, "tags");
   const content = markdownToHtml(markdown);
+  const categoryId = categoryName ? await resolveCategoryId(categoryName) : undefined;
+  const tagIds = [];
+  for (const tagName of tagNames) {
+    tagIds.push(await resolveTagId(tagName));
+  }
   const existing = await wordpressRequest(
     `/wp-json/wp/v2/posts?slug=${encodeURIComponent(slug)}&status=any&per_page=1&_fields=id,slug,status`,
+    {},
+    `post "${slug}" lookup`,
   );
 
-  const payload = JSON.stringify({
+  const post = {
     title,
     slug,
     status: "draft",
     content,
-  });
+  };
+  if (categoryId !== undefined) {
+    post.categories = [categoryId];
+  }
+  if (tagIds.length > 0) {
+    post.tags = tagIds;
+  }
+  const meta = {};
+  if (seoTitle) {
+    meta.rank_math_title = seoTitle;
+  }
+  if (metaDescription) {
+    meta.rank_math_description = metaDescription;
+  }
+  if (focusKeyword) {
+    meta.rank_math_focus_keyword = focusKeyword;
+  }
+  if (Object.keys(meta).length > 0) {
+    post.meta = meta;
+  }
+  const payload = JSON.stringify(post);
 
   if (Array.isArray(existing) && existing.length > 0) {
     await wordpressRequest(`/wp-json/wp/v2/posts/${existing[0].id}`, {
       method: "POST",
       body: payload,
-    });
+    }, `post "${slug}" update`);
     console.log(`Updated WordPress draft: ${slug}`);
     return;
   }
@@ -243,7 +392,7 @@ async function publishDraft(filePath) {
   await wordpressRequest("/wp-json/wp/v2/posts", {
     method: "POST",
     body: payload,
-  });
+  }, `post "${slug}" creation`);
   console.log(`Created WordPress draft: ${slug}`);
 }
 
@@ -253,7 +402,7 @@ async function main() {
     throw new Error("No Markdown files were provided.");
   }
 
-  await wordpressRequest("/wp-json/wp/v2/users/me");
+  await wordpressRequest("/wp-json/wp/v2/users/me", {}, "authentication check");
   for (const file of files) {
     await publishDraft(file);
   }
