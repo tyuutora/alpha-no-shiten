@@ -8,10 +8,13 @@ on:
       - "articles/*.md"
       - "articles/images/**"
       - ".github/scripts/build-article-html.mjs"
+      - ".github/workflows/article-html.yml"
   workflow_dispatch:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: article-html-${{ github.ref }}
@@ -21,6 +24,9 @@ jobs:
   build-html:
     name: Generate paste-ready HTML
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Check out content
         uses: actions/checkout@v4
@@ -44,3 +50,24 @@ jobs:
           git add dist
           git commit -m "Generate article HTML exports"
           git push
+
+      - name: Prepare GitHub Pages artifact
+        run: |
+          mkdir -p pages
+          cp -R dist pages/dist
+          if [ -d articles/images ]; then
+            mkdir -p pages/articles
+            cp -R articles/images pages/articles/images
+          fi
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages
+
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
