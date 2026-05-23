@@ -43,7 +43,7 @@
 
 ## GitHub Pages
 
-- `dist/` は `Build article HTML` workflowからGitHub Pagesの公開成果物としてデプロイします。
+- `dist/` と存在する `articles/images/` は `Build article HTML` workflowからGitHub Pagesの公開成果物としてデプロイします。これによりHTMLの画像相対参照を保ちます。
 - リポジトリのPages設定では、公開ソースとして `GitHub Actions` を有効にします。
 - HTML生成とPages公開はGitHub内で完結し、WordPress REST APIへは送信しません。
 
