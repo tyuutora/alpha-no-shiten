@@ -35,7 +35,7 @@ jobs:
 
       - name: Save generated HTML
         run: |
-          if git diff --quiet -- dist; then
+          if [ -z "$(git status --porcelain -- dist)" ]; then
             echo "HTML exports are already current."
             exit 0
           fi
