@@ -35,6 +35,8 @@
 ## 自動フローの完成条件
 - 記事Markdownは `articles/` 配下に保存する
 - 記事で使用する画像は `articles/images/` 配下に保存し、Markdownから相対パスで参照する
-- AI編集チームの作業完了地点は、記事Markdownと画像をGitHubに保存するところまでとする
+- 記事Markdownから生成した貼り付け用HTMLは `dist/` 配下に保存する
+- `dist/` のHTMLは自動生成物とし、本文修正は `articles/` のMarkdownへ行う
+- AI編集チームの作業完了地点は、記事Markdownと画像の保存後にHTML生成が完了するところまでとする
 - WordPressへの投稿、下書き作成、公開操作はこのリポジトリから直接実行しない
-- 投稿先への連携は、GitHubに保存済みの成果物を入力とする別方式で設計する
+- 投稿先への連携は、GitHubに保存済みのMarkdown、HTML、画像を入力とする別方式で設計する
