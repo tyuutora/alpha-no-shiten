@@ -24,6 +24,40 @@ function stripFrontMatter(markdown) {
   return markdown.slice(closing + 5);
 }
 
+function plainText(text) {
+  return text
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[*_`]/g, "")
+    .trim();
+}
+
+function commentText(text) {
+  return text.replaceAll("--", "- -");
+}
+
+function seoMetadata(markdown, fileName) {
+  const title = markdown.match(/^#\s+(.+)$/m)?.[1] ?? "";
+  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+  const headingIndex = lines.findIndex((line) => /^##\s+メタディスクリプション\s*$/.test(line));
+  let description = "";
+  if (headingIndex >= 0) {
+    for (let index = headingIndex + 1; index < lines.length; index += 1) {
+      if (lines[index].trim()) {
+        description = lines[index];
+        break;
+      }
+    }
+  }
+  return [
+    "<!-- alpha-no-shiten:seo",
+    `source: articles/${fileName}`,
+    `title: ${commentText(plainText(title))}`,
+    `description: ${commentText(plainText(description))}`,
+    "-->",
+  ].join("\n");
+}
+
 function inlineMarkdown(text) {
   let value = escapeHtml(text);
   const codeTokens = [];
@@ -49,6 +83,11 @@ function inlineMarkdown(text) {
   return value.replace(/%%CODE(\d+)%%/g, (_match, index) => codeTokens[index]);
 }
 
+function block(name, content, attributes = "") {
+  const settings = attributes ? ` ${attributes}` : "";
+  return `<!-- wp:${name}${settings} -->\n${content}\n<!-- /wp:${name} -->`;
+}
+
 function markdownToHtml(markdown) {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const output = [];
@@ -60,7 +99,6 @@ function markdownToHtml(markdown) {
       continue;
     }
     if (line.startsWith("```")) {
-      const language = line.slice(3).trim();
       const code = [];
       index += 1;
       while (index < lines.length && !lines[index].startsWith("```")) {
@@ -70,18 +108,35 @@ function markdownToHtml(markdown) {
       if (index < lines.length) {
         index += 1;
       }
-      const className = language
-        ? ` class="language-${escapeHtml(language)}"`
-        : "";
       output.push(
-        `<pre><code${className}>${escapeHtml(code.join("\n"))}</code></pre>`,
+        block("code", `<pre class="wp-block-code"><code>${escapeHtml(code.join("\n"))}</code></pre>`),
       );
       continue;
     }
     const heading = line.match(/^(#{1,6})\s+(.+)$/);
     if (heading) {
       const level = heading[1].length;
-      output.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
+      output.push(
+        block(
+          "heading",
+          `<h${level} class="wp-block-heading">${inlineMarkdown(heading[2])}</h${level}>`,
+          `{"level":${level}}`,
+        ),
+      );
+      index += 1;
+      continue;
+    }
+    const image = line.match(/^!\[([^\]]*)\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)\s*$/);
+    if (image) {
+      const source = image[2].startsWith("./images/")
+        ? `../articles/${image[2].slice(2)}`
+        : image[2];
+      output.push(
+        block(
+          "image",
+          `<figure class="wp-block-image"><img src="${escapeHtml(source)}" alt="${escapeHtml(image[1])}" /></figure>`,
+        ),
+      );
       index += 1;
       continue;
     }
@@ -103,7 +158,7 @@ function markdownToHtml(markdown) {
         index += 1;
       }
       output.push(
-        `<table><thead><tr>${headers.map((cell) => `<th>${cell}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join("")}</tr>`).join("")}</tbody></table>`,
+        block("table", `<figure class="wp-block-table"><table class="has-fixed-layout"><thead><tr>${headers.map((cell) => `<th>${cell}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join("")}</tr>`).join("")}</tbody></table></figure>`),
       );
       continue;
     }
@@ -113,7 +168,10 @@ function markdownToHtml(markdown) {
         items.push(lines[index].replace(/^\s*[-*]\s+/, ""));
         index += 1;
       }
-      output.push(`<ul>${items.map((item) => `<li>${inlineMarkdown(item)}</li>`).join("")}</ul>`);
+      const content = items
+        .map((item) => block("list-item", `<li>${inlineMarkdown(item)}</li>`))
+        .join("\n");
+      output.push(block("list", `<ul class="wp-block-list">${content}</ul>`));
       continue;
     }
     if (/^\s*\d+\.\s+/.test(line)) {
@@ -122,7 +180,10 @@ function markdownToHtml(markdown) {
         items.push(lines[index].replace(/^\s*\d+\.\s+/, ""));
         index += 1;
       }
-      output.push(`<ol>${items.map((item) => `<li>${inlineMarkdown(item)}</li>`).join("")}</ol>`);
+      const content = items
+        .map((item) => block("list-item", `<li>${inlineMarkdown(item)}</li>`))
+        .join("\n");
+      output.push(block("list", `<ol class="wp-block-list">${content}</ol>`, '{"ordered":true}'));
       continue;
     }
     if (/^\s*>\s?/.test(line)) {
@@ -131,7 +192,8 @@ function markdownToHtml(markdown) {
         quote.push(lines[index].replace(/^\s*>\s?/, ""));
         index += 1;
       }
-      output.push(`<blockquote><p>${inlineMarkdown(quote.join(" "))}</p></blockquote>`);
+      const paragraph = block("paragraph", `<p>${inlineMarkdown(quote.join(" "))}</p>`);
+      output.push(block("quote", `<blockquote class="wp-block-quote">${paragraph}</blockquote>`));
       continue;
     }
     const paragraph = [line];
@@ -150,7 +212,7 @@ function markdownToHtml(markdown) {
       paragraph.push(lines[index]);
       index += 1;
     }
-    output.push(`<p>${inlineMarkdown(paragraph.join(" "))}</p>`);
+    output.push(block("paragraph", `<p>${inlineMarkdown(paragraph.join(" "))}</p>`));
   }
   return output.join("\n");
 }
@@ -160,6 +222,7 @@ async function buildArticle(fileName) {
   const outputName = `${basename(fileName, extname(fileName))}.html`;
   const markdown = stripFrontMatter(await readFile(sourcePath, "utf8"));
   const html = [
+    seoMetadata(markdown, fileName),
     `<!-- Generated from articles/${fileName}. Edit the Markdown source, not this file. -->`,
     markdownToHtml(markdown),
     "",
