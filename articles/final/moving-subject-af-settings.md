@@ -1,6 +1,8 @@
 ---
+title: 動き物のAF設定｜SONY αで子ども・ペット・電車を失敗せず撮るコツ
+slug: moving-subject-af-settings
 seo_title: 動き物のAF設定｜SONY αで子ども・ペット・電車を失敗せず撮るコツ
-focus_keyphrase: 動き物 AF設定
+focus_keyword: 動き物 AF設定
 category: 撮影テクニック
 tags:
   - 動き物撮影
@@ -9,7 +11,7 @@ tags:
   - AF-C
   - α7 IV
   - α7C II
-description: 動き物のAF設定をSONY α初心者向けに解説。AF-C、トラッキング、被写体認識、シャッター速度を子ども・ペット・電車別に整理し、ピント外れや被写体ブレの直し方まで紹介します。
+meta_description: 動き物のAF設定をSONY α初心者向けに解説。AF-C、トラッキング、被写体認識、シャッター速度を子ども・ペット・電車別に整理し、ピント外れや被写体ブレの直し方まで紹介します。
 ---
 
 # 動き物のAF設定｜SONY αで子ども・ペット・電車を失敗せず撮るコツ
