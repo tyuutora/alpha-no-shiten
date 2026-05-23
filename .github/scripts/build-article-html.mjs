@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { basename, extname, resolve } from "node:path";
 
 const repoRoot = process.cwd();
@@ -174,6 +174,15 @@ const articles = (await readdir(articlesRoot, { withFileTypes: true }))
   .sort();
 
 await mkdir(distRoot, { recursive: true });
+const expectedOutputs = new Set(
+  articles.map((fileName) => `${basename(fileName, extname(fileName))}.html`),
+);
+for (const output of await readdir(distRoot, { withFileTypes: true })) {
+  if (output.isFile() && output.name.endsWith(".html") && !expectedOutputs.has(output.name)) {
+    await unlink(resolve(distRoot, output.name));
+    console.log(`Removed dist/${output.name}`);
+  }
+}
 for (const article of articles) {
   await buildArticle(article);
 }
