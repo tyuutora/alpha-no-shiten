@@ -27,6 +27,7 @@
 - 記事タイトルはMarkdown本文の最初の `# ` 見出しに置きます。
 - 記事から使用する画像は相対パスで参照します。
 - `dist/` のHTMLは生成物です。修正は必ず `articles/` のMarkdownへ行います。
+- `dist/` のHTMLはWordPressブロックエディタ向けのブロックコメント付きHTMLとして生成します。
 - 所有していない機材を扱う記事では、実写・使用体験を装わず、検討記事または仕様に基づく解説として記述します。
 - 投稿先サービス固有の認証情報、API実行コード、投稿ステータス管理は記事成果物に含めません。
 
@@ -36,8 +37,15 @@
 - 例: `articles/fe85gm2-review.md` から `dist/fe85gm2-review.html` を生成します。
 - 記事Markdownを削除した場合は、対応する `dist/` のHTMLも自動的に削除します。
 - `dist/` の保存には、GitHub Actionsがリポジトリ内容へ書き込める設定が必要です。
-- HTMLはWordPressへ貼り付けやすい本文断片として生成し、タイトル見出し、表、リスト、リンク、画像参照を保持します。
+- HTMLの先頭にSEOタイトルとメタディスクリプションをHTMLコメントで含め、本文表示には影響させません。
+- HTMLはWordPressへ貼り付けやすい本文断片として生成し、`h2`、`h3`、リスト、表、引用、画像をコアブロック互換寄りの形式で保持します。不要な `style` タグは生成しません。
 - 画像参照は `dist/` から元画像へ辿れるよう `../articles/images/...` に変換します。将来のWordPress取込側でメディア登録またはURL置換を扱います。
+
+## GitHub Pages
+
+- `dist/` は `Build article HTML` workflowからGitHub Pagesの公開成果物としてデプロイします。
+- リポジトリのPages設定では、公開ソースとして `GitHub Actions` を有効にします。
+- HTML生成とPages公開はGitHub内で完結し、WordPress REST APIへは送信しません。
 
 ## 将来の投稿連携
 
