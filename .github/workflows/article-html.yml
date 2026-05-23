@@ -1,0 +1,46 @@
+name: Build article HTML
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "articles/*.md"
+      - "articles/images/**"
+      - ".github/scripts/build-article-html.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: article-html-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-html:
+    name: Generate paste-ready HTML
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out content
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build HTML exports
+        run: node .github/scripts/build-article-html.mjs
+
+      - name: Save generated HTML
+        run: |
+          if git diff --quiet -- dist; then
+            echo "HTML exports are already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist
+          git commit -m "Generate article HTML exports"
+          git push
