@@ -207,6 +207,30 @@ async function wpRequest(endpoint, options = {}) {
   return response.status === 204 ? null : response.json();
 }
 
+async function verifyAuthentication() {
+  const url = `${apiBase}/users/me`;
+  const loggedUrl = new URL(url);
+  loggedUrl.username = "";
+  loggedUrl.password = "";
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: { Authorization: `Basic ${auth}` },
+    });
+  } catch {
+    console.error("HTTP status: unavailable");
+    console.error("Response body: No response received.");
+    console.error(`URL: ${loggedUrl.href}`);
+    process.exit(1);
+  }
+  if (!response.ok) {
+    console.error(`HTTP status: ${response.status}`);
+    console.error(`Response body: ${await response.text()}`);
+    console.error(`URL: ${loggedUrl.href}`);
+    process.exit(1);
+  }
+}
+
 async function categoryIds(attributes) {
   const explicitIds = splitList(
     attributes.category_ids || process.env.WP_DEFAULT_CATEGORY_IDS,
@@ -391,6 +415,7 @@ async function publishDraft(repositoryPath, modifiedPaths) {
   console.log(`${post ? "Updated" : "Created"} WordPress draft #${result.id}: ${title}`);
 }
 
+await verifyAuthentication();
 const modifiedPaths = await changedPaths();
 const articles = await affectedArticles(modifiedPaths);
 if (!articles.length) {
