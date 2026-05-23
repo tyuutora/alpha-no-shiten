@@ -39,6 +39,7 @@
 - `dist/` のHTMLはWordPressブロックエディタ互換寄りのブロックHTMLとして生成し、SEO用メタ情報を先頭コメントに含める
 - `dist/` はGitHub Pagesで公開し、WordPress側の取込元として利用できる形にする
 - `dist/` のHTMLは自動生成物とし、本文修正は `articles/` のMarkdownへ行う
-- AI編集チームの作業完了地点は、記事Markdownと画像の保存後にHTML生成が完了するところまでとする
-- WordPressへの投稿、下書き作成、公開操作はこのリポジトリから直接実行しない
-- 投稿先への連携は、GitHubに保存済みのMarkdown、HTML、画像を入力とする別方式で設計する
+- WordPress下書き投稿は `.github/workflows/wordpress-draft-from-markdown.yml` のみで行い、GitHub Secretsの `WP_BASE_URL`、`WP_USERNAME`、`WP_APP_PASSWORD` を使う
+- 下書き投稿workflowは投稿前に `/wp-json/wp/v2/users/me` で認証確認し、同じslugの投稿があれば更新、なければ新規作成する
+- 下書き投稿workflowは画像アップロードを行わず、認証情報やAuthorizationヘッダーをログに出さない
+- AI編集チームの作業完了地点は、記事Markdownと画像の保存後にHTML生成が完了し、必要に応じてWordPress下書き投稿workflowが実行できる状態にするところまでとする
