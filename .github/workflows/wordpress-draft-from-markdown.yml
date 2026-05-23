@@ -1,0 +1,84 @@
+name: WordPress draft from Markdown
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "articles/**/*.md"
+  workflow_dispatch:
+    inputs:
+      markdown_path:
+        description: "Draft a specific Markdown file. Leave empty to process all articles/*.md files."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wordpress-draft-from-markdown-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish-draft:
+    name: Publish WordPress draft
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out content
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Collect Markdown files
+        id: markdown
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MARKDOWN_PATH: ${{ inputs.markdown_path }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          : > /tmp/markdown-files.txt
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ -n "$MARKDOWN_PATH" ]; then
+              printf '%s\n' "$MARKDOWN_PATH" > /tmp/markdown-files.txt
+            else
+              find articles -type f -name '*.md' | sort > /tmp/markdown-files.txt
+            fi
+          elif [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            git ls-tree -r --name-only "$HEAD_SHA" -- articles | grep -E '^articles/.+\.md$' > /tmp/markdown-files.txt || true
+          else
+            git diff --name-only --diff-filter=AM "$BEFORE_SHA" "$HEAD_SHA" -- articles | grep -E '^articles/.+\.md$' > /tmp/markdown-files.txt || true
+          fi
+
+          if [ ! -s /tmp/markdown-files.txt ]; then
+            echo "has_files=false" >> "$GITHUB_OUTPUT"
+            echo "No Markdown article files to publish."
+            exit 0
+          fi
+
+          while IFS= read -r file; do
+            if [ ! -f "$file" ]; then
+              echo "Markdown file does not exist: $file" >&2
+              exit 1
+            fi
+          done < /tmp/markdown-files.txt
+
+          echo "has_files=true" >> "$GITHUB_OUTPUT"
+          sed 's/^/- /' /tmp/markdown-files.txt
+
+      - name: Publish WordPress drafts
+        if: steps.markdown.outputs.has_files == 'true'
+        env:
+          WP_BASE_URL: ${{ secrets.WP_BASE_URL }}
+          WP_USERNAME: ${{ secrets.WP_USERNAME }}
+          WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+        run: xargs node .github/scripts/publish-wordpress-draft-from-markdown.mjs < /tmp/markdown-files.txt
