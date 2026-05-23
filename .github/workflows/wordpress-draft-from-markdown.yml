@@ -40,7 +40,7 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          MARKDOWN_PATH: ${{ inputs.markdown_path }}
+          MARKDOWN_PATH: ${{ github.event.inputs.markdown_path || '' }}
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
         run: |
