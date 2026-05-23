@@ -260,23 +260,6 @@ async function categoryIds(attributes) {
   return ids;
 }
 
-async function existingPost(slug) {
-  for (const status of ["draft", "pending", "private", "future", "publish"]) {
-    const items = await wpRequest(
-      `/posts?context=edit&slug=${encodeURIComponent(slug)}&status=${status}&per_page=1`,
-    );
-    if (items.length) {
-      if (status === "publish") {
-        throw new Error(
-          `A published WordPress post already uses slug "${slug}". Refusing to convert it to a draft.`,
-        );
-      }
-      return items[0];
-    }
-  }
-  return null;
-}
-
 function mimeType(filePath) {
   const extension = extname(filePath).toLowerCase();
   return (
@@ -371,7 +354,7 @@ async function affectedArticles(paths) {
   return [...articles];
 }
 
-async function publishDraft(repositoryPath, modifiedPaths) {
+async function publishDraft(repositoryPath) {
   const articlePath = assertArticlePath(repositoryPath);
   const source = await readFile(articlePath, "utf8");
   const { attributes, body } = parseFrontMatter(source);
@@ -385,14 +368,9 @@ async function publishDraft(repositoryPath, modifiedPaths) {
   const imageReference = attributes.featured_image || imageMatch?.[2];
   const imageAlt = attributes.featured_image_alt || imageMatch?.[1] || title;
   const image = await localImage(articlePath, imageReference);
-  const post = await existingPost(slug);
   const categories = await categoryIds(attributes);
 
-  let featuredMedia = post?.featured_media || 0;
-  const imageWasModified = image && modifiedPaths.has(image.repositoryPath);
-  if (image && (!post || !featuredMedia || imageWasModified)) {
-    featuredMedia = await uploadMedia(image, title, imageAlt);
-  }
+  const featuredMedia = image ? await uploadMedia(image, title, imageAlt) : 0;
 
   let articleBody = body.replace(titleLine[0], "").trim();
   if (imageMatch && attributes.keep_featured_image !== "true") {
@@ -406,13 +384,12 @@ async function publishDraft(repositoryPath, modifiedPaths) {
     categories,
     ...(featuredMedia ? { featured_media: featuredMedia } : {}),
   };
-  const endpoint = post ? `/posts/${post.id}` : "/posts";
-  const result = await wpRequest(endpoint, {
+  const result = await wpRequest("/posts", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  console.log(`${post ? "Updated" : "Created"} WordPress draft #${result.id}: ${title}`);
+  console.log(`Created WordPress draft #${result.id}: ${title}`);
 }
 
 await verifyAuthentication();
@@ -423,5 +400,5 @@ if (!articles.length) {
   process.exit(0);
 }
 for (const article of articles) {
-  await publishDraft(article, modifiedPaths);
+  await publishDraft(article);
 }
