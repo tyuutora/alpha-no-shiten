@@ -245,6 +245,66 @@ function slugFromPath(filePath) {
   return basename(filePath, extname(filePath));
 }
 
+function plainMarkdown(text) {
+  return String(text)
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/!\[[^\]]*]\([^)]+\)/g, "")
+    .replace(/\[([^\]]+)]\([^)]+\)/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/^\s*>\s?/gm, "")
+    .replace(/[*_`~|]/g, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function autoFocusKeyword(title, tagNames, categoryName) {
+  const titleKeyword = title
+    .replace(/^【[^】]+】/, "")
+    .split(/[｜|:：]/)[0]
+    .replace(/[「」『』]/g, "")
+    .replace(/レビュー.*$/, "レビュー")
+    .replace(/完全ガイド.*$/, "完全ガイド")
+    .replace(/おすすめ\d*本?.*$/, "おすすめ")
+    .trim();
+  if (titleKeyword.length >= 4) {
+    return titleKeyword.slice(0, 40);
+  }
+
+  const genericTags = new Set(["SONY", "撮影テクニック", "カメラ初心者", categoryName]);
+  const tagKeyword = tagNames.find((tag) => tag && !genericTags.has(tag));
+  return tagKeyword || categoryName || title.slice(0, 40);
+}
+
+function firstUsefulParagraph(markdown) {
+  for (const block of markdown.replace(/\r\n/g, "\n").split(/\n{2,}/)) {
+    const trimmed = block.trim();
+    if (
+      !trimmed ||
+      /^#{1,6}\s+/.test(trimmed) ||
+      /^[-*]\s+/.test(trimmed) ||
+      /^\d+\.\s+/.test(trimmed) ||
+      trimmed.includes("|---")
+    ) {
+      continue;
+    }
+    const plain = plainMarkdown(trimmed);
+    if (plain.length >= 30) {
+      return plain;
+    }
+  }
+  return "";
+}
+
+function autoMetaDescription(markdown, title) {
+  const paragraph = firstUsefulParagraph(markdown);
+  const seed = paragraph || `${title}について、初心者にも分かりやすくポイントと注意点を解説します。`;
+  const description = seed.replace(/\s+/g, " ").trim();
+  return description.length > 120 ? `${description.slice(0, 119)}…` : description;
+}
+
 async function wordpressRequest(endpoint, options = {}, item = "WordPress request") {
   let response;
   try {
@@ -355,10 +415,12 @@ async function publishDraft(filePath) {
   const title = frontMatterString(data, "title") || markdownTitle(markdown, filePath);
   const slug = frontMatterString(data, "slug") || slugFromPath(filePath);
   const seoTitle = frontMatterString(data, "seo_title");
-  const focusKeyword = frontMatterString(data, "focus_keyword", "focus_keyphrase");
-  const metaDescription = frontMatterString(data, "meta_description", "description");
   const categoryName = frontMatterString(data, "category");
   const tagNames = frontMatterList(data, "tags");
+  const explicitFocusKeyword = frontMatterString(data, "focus_keyword", "focus_keyphrase");
+  const explicitMetaDescription = frontMatterString(data, "meta_description", "description");
+  const focusKeyword = explicitFocusKeyword || autoFocusKeyword(title, tagNames, categoryName);
+  const metaDescription = explicitMetaDescription || autoMetaDescription(markdown, title);
   const content = markdownToHtml(markdown);
   const categoryId = categoryName ? await resolveCategoryId(categoryName) : undefined;
   const tagIds = [];
@@ -395,6 +457,12 @@ async function publishDraft(filePath) {
   }
   if (Object.keys(meta).length > 0) {
     post.meta = meta;
+  }
+  if (!explicitFocusKeyword && focusKeyword) {
+    console.log(`Auto focus keyword for ${slug}: ${focusKeyword}`);
+  }
+  if (!explicitMetaDescription && metaDescription) {
+    console.log(`Auto meta description for ${slug}: ${metaDescription}`);
   }
   const payload = JSON.stringify(post);
 
